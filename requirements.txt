@@ -2,3 +2,4 @@ aiogram==3.0.0b5
 SQLAlchemy==2.0.0
 psycopg2-binary==2.9.3
 python-dotenv==0.21.1
+openai==1.63.2

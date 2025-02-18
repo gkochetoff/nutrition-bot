@@ -5,6 +5,7 @@ from app.bot.config import BOT_TOKEN
 from app.bot.handlers.start import register_start_handlers
 from app.bot.handlers.user_data import register_user_data_handlers
 from app.bot.handlers.calculations import register_calculation_handlers
+from app.bot.handlers.menu import router as menu_router
 
 async def main():
     bot = Bot(token=BOT_TOKEN, parse_mode="HTML")
@@ -14,6 +15,7 @@ async def main():
     register_start_handlers(dp)
     register_user_data_handlers(dp)
     register_calculation_handlers(dp)
+    dp.include_router(menu_router)  # Регистрируем меню
 
     await dp.start_polling(bot)
 
