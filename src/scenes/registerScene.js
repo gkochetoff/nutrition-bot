@@ -1,0 +1,115 @@
+const { Scenes } = require('telegraf');
+const userController = require('../controllers/userController');
+const { 
+  calculateBMR,
+  activityFactor,
+  adjustCaloriesForGoal,
+  calculateMacros
+} = require('../services/macrosService');
+
+const registerScene = new Scenes.WizardScene(
+  'registerScene',
+  // 1. Возраст
+  (ctx) => {
+    ctx.reply('👤 Введите ваш возраст (полных лет):');
+    ctx.wizard.state.data = {};
+    return ctx.wizard.next();
+  },
+  // 2. Пол
+  (ctx) => {
+    const age = parseInt(ctx.message.text);
+    if (isNaN(age) || age <= 0) {
+      ctx.reply('Пожалуйста, введите корректное число (возраст).');
+      return;
+    }
+    ctx.wizard.state.data.age = age;
+    ctx.reply('👤 Ваш пол (М/Ж):');
+    return ctx.wizard.next();
+  },
+  // 3. Вес
+  (ctx) => {
+    const gender = ctx.message.text.trim().toLowerCase();
+    if (!['м','ж','m','f','муж','жен'].some(g => gender.includes(g))) {
+      ctx.reply('Пожалуйста, укажите "М" (муж) или "Ж" (жен).');
+      return;
+    }
+    ctx.wizard.state.data.gender = gender;
+    ctx.reply('⚖️ Ваш вес (кг):');
+    return ctx.wizard.next();
+  },
+  // 4. Рост
+  (ctx) => {
+    const weight = parseFloat(ctx.message.text.replace(',', '.'));
+    if (isNaN(weight) || weight <= 0) {
+      ctx.reply('Введите корректный вес (число).');
+      return;
+    }
+    ctx.wizard.state.data.weight = weight;
+    ctx.reply('📏 Ваш рост (см):');
+    return ctx.wizard.next();
+  },
+  // 5. Уровень активности
+  (ctx) => {
+    const height = parseInt(ctx.message.text);
+    if (isNaN(height) || height <= 0) {
+      ctx.reply('Введите корректный рост (см, число).');
+      return;
+    }
+    ctx.wizard.state.data.height = height;
+    ctx.reply('🤸 Укажите уровень физической активности (низкий/средний/высокий):');
+    return ctx.wizard.next();
+  },
+  // 6. Цель
+  (ctx) => {
+    const activity = ctx.message.text.toLowerCase();
+    if (!['низкий','средний','высокий'].includes(activity)) {
+      ctx.reply('Укажите: низкий, средний или высокий.');
+      return;
+    }
+    ctx.wizard.state.data.activity = activity;
+    ctx.reply('🥅 Ваша цель (сброс веса / поддержание / набор веса):');
+    return ctx.wizard.next();
+  },
+  // 7. Завершение
+  async (ctx) => {
+    const goalInput = ctx.message.text.toLowerCase();
+    let goal = 'maintain';
+    if (goalInput.includes('сброс')) goal = 'lose';
+    else if (goalInput.includes('набор')) goal = 'gain';
+
+    ctx.wizard.state.data.goal = goal;
+
+    const { age, gender, weight, height, activity } = ctx.wizard.state.data;
+    // Расчёт BMR
+    const bmr = calculateBMR({ weight, height, age, gender });
+    const tdee = bmr * activityFactor(activity);
+    const dailyCalories = adjustCaloriesForGoal(tdee, goal);
+    const macros = calculateMacros(dailyCalories);
+
+    // Сохраняем в БД
+    const telegramId = ctx.from.id;
+    await userController.upsertUser({
+      telegram_id: telegramId,
+      age,
+      gender,
+      weight,
+      height,
+      activity,
+      goal,
+      daily_calories: dailyCalories,
+      protein: macros.protein,
+      fat: macros.fat,
+      carbs: macros.carbs
+    });
+
+    // Отправляем результат
+    ctx.reply(
+      `Данные сохранены!\nСуточная норма калорий: ${dailyCalories} ккал.\n` +
+      `Б: ${macros.protein} г, Ж: ${macros.fat} г, У: ${macros.carbs} г.`
+    );
+
+    return ctx.scene.leave();
+  }
+);
+
+module.exports = registerScene;

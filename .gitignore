@@ -171,3 +171,5 @@ cython_debug/
 .pypirc
 .DS_Store
 start_postgres.sh
+/node_modules
+package-lock.json
