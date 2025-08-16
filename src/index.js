@@ -9,3 +9,19 @@ const bot = require('./bot');
     console.error('Ошибка при запуске бота:', err);
   }
 })();
+
+// Грейсфул-шатдаун
+const shutdown = async (signal) => {
+  try {
+    console.log(`Получен сигнал ${signal}. Останавливаю бота...`);
+    await bot.stop(`Signal ${signal}`);
+    console.log('Бот остановлен.');
+    process.exit(0);
+  } catch (e) {
+    console.error('Ошибка при остановке бота:', e);
+    process.exit(1);
+  }
+};
+
+process.once('SIGINT', () => shutdown('SIGINT'));
+process.once('SIGTERM', () => shutdown('SIGTERM'));

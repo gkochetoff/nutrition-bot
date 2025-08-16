@@ -1,10 +1,24 @@
 ## Local run ##
 ```bash
 ngrok http 3000
+### Запуск локально
+
+1) Создайте файл `.env` на основе `.env.example` и заполните переменные окружения:
 ```
 Paste ngrok URL and telegram bot token here
 ```bash
 curl -X POST "https://api.telegram.org/botYOUR_BOT_TOKEN/setWebhook?url=YOUR_NGROK_URL"
 ```
 
-curl -X POST "https://api.telegram.org/bot7719179667:AAEuw3Fqp8Z4QJfGBmeP29m6H0kp3Ca5yLQ/setWebhook?url=https://05c8-142-93-137-35.ngrok-free.app"
+2) Установите зависимости и запустите:
+```
+npm install
+npm run dev
+```
+
+Бот использует long polling. Вебхуки не требуются. Если хотите использовать вебхуки, настройте прокси и выполните установку вебхука вручную:
+```
+curl -X POST "https://api.telegram.org/botYOUR_BOT_TOKEN/setWebhook?url=YOUR_HTTPS_URL"
+```
+
+Никогда не публикуйте `BOT_TOKEN` в открытом виде.

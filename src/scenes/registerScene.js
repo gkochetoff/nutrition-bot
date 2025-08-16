@@ -28,11 +28,15 @@ const registerScene = new Scenes.WizardScene(
   },
   // 3. Вес
   (ctx) => {
-    const gender = ctx.message.text.trim().toLowerCase();
-    if (!['м','ж','m','f','муж','жен'].some(g => gender.includes(g))) {
+    const genderInput = ctx.message.text.trim().toLowerCase();
+    if (!['м','ж','m','f','муж','жен'].some(g => genderInput.includes(g))) {
       ctx.reply('Пожалуйста, укажите "М" (муж) или "Ж" (жен).');
       return;
     }
+    // Нормализуем до 'M' / 'F' для соответствия колонке БД gender VARCHAR(2)
+    const gender = (genderInput.includes('м')) || (genderInput.startsWith('m')) || (genderInput.includes('муж'))
+      ? 'M'
+      : 'F';
     ctx.wizard.state.data.gender = gender;
     ctx.reply('⚖️ Ваш вес (кг):');
     return ctx.wizard.next();

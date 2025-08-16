@@ -1,12 +1,13 @@
-const { Client } = require('pg');
+const { Pool } = require('pg');
 const { DATABASE_URL } = require('../config');
 
-const client = new Client({
-  connectionString: DATABASE_URL
+const pool = new Pool({
+  connectionString: DATABASE_URL,
+  max: 10,
+  idleTimeoutMillis: 30000
 });
-
-client.connect()
-  .then(() => console.log('✅ Connected to PostgreSQL'))
-  .catch(err => console.error('DB connection error', err));
-
-module.exports = client;
+  
+module.exports = {
+  query: (...args) => pool.query(...args),
+  pool
+};

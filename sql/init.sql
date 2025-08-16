@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS menus (
     user_id INT REFERENCES users(id) ON DELETE CASCADE,
     created_at TIMESTAMP DEFAULT NOW(),
     total_calories INT,
-    days TEXT  -- можно хранить исходный текст меню или JSON
+    days JSONB  -- исходный JSON меню
 );
 
 -- Таблица блюд (meals)
@@ -36,5 +36,5 @@ CREATE TABLE IF NOT EXISTS meals (
     fat INT,
     carbs INT,
     portion_weight INT,
-    recipe TEXT
+    recipe JSONB
 );
