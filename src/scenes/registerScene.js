@@ -1,4 +1,4 @@
-const { Scenes } = require('telegraf');
+const { Scenes, Markup } = require('telegraf');
 const userController = require('../controllers/userController');
 const { 
   calculateBMR,
@@ -23,7 +23,9 @@ const registerScene = new Scenes.WizardScene(
       return;
     }
     ctx.wizard.state.data.age = age;
-    ctx.reply('👤 Ваш пол (М/Ж):');
+    ctx.reply('👤 Выберите ваш пол:', Markup.keyboard([
+      ['М', 'Ж']
+    ]).resize().oneTime());
     return ctx.wizard.next();
   },
   // 3. Вес
@@ -38,7 +40,7 @@ const registerScene = new Scenes.WizardScene(
       ? 'M'
       : 'F';
     ctx.wizard.state.data.gender = gender;
-    ctx.reply('⚖️ Ваш вес (кг):');
+    ctx.reply('⚖️ Ваш вес (кг):', Markup.removeKeyboard());
     return ctx.wizard.next();
   },
   // 4. Рост
@@ -60,7 +62,9 @@ const registerScene = new Scenes.WizardScene(
       return;
     }
     ctx.wizard.state.data.height = height;
-    ctx.reply('🤸 Укажите уровень физической активности (низкий/средний/высокий):');
+    ctx.reply('🤸 Укажите уровень физической активности:', Markup.keyboard([
+      ['низкий', 'средний', 'высокий']
+    ]).resize().oneTime());
     return ctx.wizard.next();
   },
   // 6. Цель
@@ -71,7 +75,9 @@ const registerScene = new Scenes.WizardScene(
       return;
     }
     ctx.wizard.state.data.activity = activity;
-    ctx.reply('🥅 Ваша цель (сброс веса / поддержание / набор веса):');
+    ctx.reply('🥅 Ваша цель:', Markup.keyboard([
+      ['сброс веса', 'поддержание', 'набор веса']
+    ]).resize().oneTime());
     return ctx.wizard.next();
   },
   // 7. Завершение
@@ -108,9 +114,14 @@ const registerScene = new Scenes.WizardScene(
 
     // Отправляем результат
     ctx.reply(
-      `Данные сохранены!\nСуточная норма калорий: ${dailyCalories} ккал.\n` +
-      `Б: ${macros.protein} г, Ж: ${macros.fat} г, У: ${macros.carbs} г.`
-    );
+      `✅ Данные успешно сохранены!\n\n` +
+      `📊 Ваша суточная норма:\n` +
+      `• Калории: <b>${dailyCalories} ккал</b>\n` +
+      `• Белки: <b>${macros.protein} г</b>\n` +
+      `• Жиры: <b>${macros.fat} г</b>\n` +
+      `• Углеводы: <b>${macros.carbs} г</b>\n\n` +
+      `🍽️ Теперь используйте команду /menu для генерации персонального меню на неделю!`
+    , { parse_mode: 'HTML' }, Markup.removeKeyboard());
 
     return ctx.scene.leave();
   }

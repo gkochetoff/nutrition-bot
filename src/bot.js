@@ -52,7 +52,7 @@ const validateUser = async (ctx, next) => {
 // Команда /start
 bot.start(validateUser, (ctx) => {
   console.log('Start command received from user:', ctx.from.id);
-  ctx.reply('Привет! Я помогу рассчитать твою норму калорий и составить меню.');
+  ctx.reply('👋 Привет! Я помогу рассчитать твою норму калорий и составить персональное меню на неделю.\n\n📝 Давайте начнем с регистрации!');
   ctx.scene.enter('registerScene');
 });
 
@@ -63,11 +63,11 @@ bot.command('menu', validateUser, async (ctx) => {
   const user = await userController.getUserByTelegramId(telegramId);
   if (!user) {
     console.log('User not found:', telegramId);
-    return ctx.reply('Сначала выполни /start для ввода данных.');
+    return ctx.reply('⚠️ Сначала выполните команду <code>/start</code> для ввода данных.', { parse_mode: 'HTML' });
   }
 
   console.log('Generating menu for user:', telegramId);
-  await ctx.reply('Начинаю генерацию меню. Я пришлю дни по мере готовности.');
+      await ctx.reply('🍽️ Начинаю генерацию персонального меню на неделю...\n\n⏳ Пожалуйста, подождите. Я пришлю дни по мере готовности.');
   
   try {
     console.log('Creating weekly menu...');
@@ -87,7 +87,7 @@ bot.command('menu', validateUser, async (ctx) => {
       if (dayMeals.length === 0) continue;
 
       console.log(`Sending menu for day ${day}`);
-      let msg = `<b>День ${day}</b>\n`;
+      let msg = `📅 <b>День ${day}</b>\n\n`;
       const buttons = [];
 
       dayMeals.forEach(m => {
@@ -95,8 +95,11 @@ bot.command('menu', validateUser, async (ctx) => {
         const mealLabel = m.meal_time === 'breakfast' ? 'Завтрак' : m.meal_time === 'lunch' ? 'Обед' : 'Ужин';
         const macros = escapeHtml(`Б${m.protein}/Ж${m.fat}/У${m.carbs}`);
         const portion = escapeHtml(String(m.portion));
-        msg += `${mealLabel}:\n` +
-          `<b>${title}</b> — ${m.calories} ккал, БЖУ: ${macros}, порция ≈ ${portion} г.\n\n`;
+        msg += `🍽️ <b>${mealLabel}</b>\n` +
+          `• <b>${title}</b>\n` +
+          `• Калории: ${m.calories} ккал\n` +
+          `• БЖУ: ${macros}\n` +
+          `• Порция: ≈ ${portion} г\n\n`;
         buttons.push([{
           text: m.name,
           callback_data: `recipe_${m.id}`
@@ -133,8 +136,8 @@ bot.command('menu', validateUser, async (ctx) => {
         if (!text) return;
         const looksLikeJson = /^\s*[\[{]/.test(text);
         const payload = looksLikeJson
-          ? `🛒 Список покупок на неделю:\n<pre>${escapeHtml(text)}</pre>`
-          : `🛒 Список покупок на неделю:\n${escapeHtml(text)}`;
+          ? `🛒 <b>Список покупок на неделю</b>\n\n<pre>${escapeHtml(text)}</pre>`
+          : `🛒 <b>Список покупок на неделю</b>\n\n${text}`;
         await bot.telegram.sendMessage(
           telegramId,
           payload,
@@ -167,16 +170,16 @@ bot.action(/recipe_(\d+)/, validateUser, async (ctx) => {
 
     const { ingredients = [], steps = [], cookingTimeMinutes = 0 } = meal.recipe;
 
-    let msg = `<b>${escapeHtml(meal.name)}</b>\n\n`;
-    msg += `<b>Ингредиенты:</b>\n`;
+    let msg = `📖 <b>Рецепт: ${escapeHtml(meal.name)}</b>\n\n`;
+    msg += `🥕 <b>Ингредиенты:</b>\n`;
     ingredients.forEach(ing => {
-      msg += ` - ${escapeHtml(ing)}\n`;
+      msg += ` • ${escapeHtml(ing)}\n`;
     });
-    msg += `\n<b>Шаги приготовления:</b>\n`;
+    msg += `\n👨‍🍳 <b>Шаги приготовления:</b>\n`;
     steps.forEach((step, i) => {
       msg += `${i + 1}. ${escapeHtml(step)}\n`;
     });
-    msg += `\nПримерное время: ~${cookingTimeMinutes} минут.\n`;
+    msg += `\n⏱ <b>Время приготовления:</b> ~${cookingTimeMinutes} минут\n`;
 
     await ctx.answerCbQuery();
     await ctx.reply(msg.replace(/\n/g,'\n'), { parse_mode: 'HTML' });
