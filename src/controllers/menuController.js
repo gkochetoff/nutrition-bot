@@ -100,22 +100,57 @@ function generateMenuPrompt(dailyCalories, p, f, c, goal) {
 {"days":[{"dayNumber":1,"meals":[{"mealTime":"breakfast","name":"...","calories":0,"protein":0,"fat":0,"carbs":0,"portionWeight":0},{"mealTime":"lunch","name":"...","calories":0,"protein":0,"fat":0,"carbs":0,"portionWeight":0},{"mealTime":"dinner","name":"...","calories":0,"protein":0,"fat":0,"carbs":0,"portionWeight":0}]},{"dayNumber":2,"meals":[...]},...,{"dayNumber":7,"meals":[...]}]}`;
 }
 
-function generateDayMenuPrompt(dailyCalories, p, f, c, goal, dayNumber) {
+function generateDayMenuPrompt(
+  dailyCalories,
+  p,
+  f,
+  c,
+  goal,
+  dayNumber,
+  blockedNames = [],
+  usedProteinSources = [],
+  usedCarbSources = [],
+  usedFiberSources = [],
+  caps = { protein: 5, carbs: 3, fiber: 5 }
+) {
   const dc = Math.round(dailyCalories);
   const ranges = {
-    kcalMin: Math.round(dc * 0.97),
-    kcalMax: Math.round(dc * 1.03),
-    pMin: Math.round(p * 0.95),
-    pMax: Math.round(p * 1.05),
-    fMin: Math.round(f * 0.95),
-    fMax: Math.round(f * 1.05),
-    cMin: Math.round(c * 0.95),
-    cMax: Math.round(c * 1.05)
+    kcalMin: Math.round(dc * 0.99),
+    kcalMax: Math.round(dc * 1.01),
+    pMin: Math.round(p * 0.97),
+    pMax: Math.round(p * 1.03),
+    fMin: Math.round(f * 0.97),
+    fMax: Math.round(f * 1.03),
+    cMin: Math.round(c * 0.97),
+    cMax: Math.round(c * 1.03)
   };
-  return `Составь меню на один день №${dayNumber} (ровно 3 блюда: breakfast, lunch, dinner) для цели "${goal}". Норма дня ${dc} ккал/день и макросы (Б:${p}г, Ж:${f}г, У:${c}г).
-Суммы за день в пределах: ${ranges.kcalMin}-${ranges.kcalMax} ккал; Б:${ranges.pMin}-${ranges.pMax}; Ж:${ranges.fMin}-${ranges.fMax}; У:${ranges.cMin}-${ranges.cMax}.
+  const kcalB = Math.round(dc * 0.25);
+  const kcalL = Math.round(dc * 0.40);
+  const kcalD = Math.round(dc * 0.35);
+  const kcalBand = (n) => `${Math.round(n*0.97)}-${Math.round(n*1.03)}`;
+  const repetitionRule = 'Название каждого блюда может повторяться не более 2 раз за неделю.';
+  const avoidList = blockedNames.length ? `Не используй названия блюд из этого списка (исчерпан лимит повторов): ${blockedNames.join('; ')}.` : '';
+  return `Составь меню на один день №${dayNumber} (ровно 3 блюда: breakfast, lunch, dinner) для цели "${goal}".
+Точное соответствие целям:
+- Сумма калорий за день строго в пределах ${ranges.kcalMin}-${ranges.kcalMax} ккал (норма дня ${dc}).
+- Суммы макросов за день: Б:${ranges.pMin}-${ranges.pMax}, Ж:${ranges.fMin}-${ranges.fMax}, У:${ranges.cMin}-${ranges.cMax} (в граммах).
+- Распределение калорий по приёмам пищи: breakfast ~${kcalB} ккал (допуск ${kcalBand(kcalB)}), lunch ~${kcalL} ккал (допуск ${kcalBand(kcalL)}), dinner ~${kcalD} ккал (допуск ${kcalBand(kcalD)}).
+Если суммы выходят за пределы, отрегулируй portionWeight и состав блюд, чтобы попасть в коридоры.
+Разнообразие:
+- ${repetitionRule} ${avoidList}
+- Чередуй источники белка (птица, рыба, яйца/творог, бобовые) и углеводы (овсянка, рис/киноа/гречка/картофель/паста).
+- Избегай одинаковых баз (например, овсянка) два дня подряд на завтрак.
+Ограничение источников на неделю (уникальные названия):
+- белковые источники: не более ${caps.protein}
+- углеводные источники: не более ${caps.carbs}
+- клетчатка/овощи/фрукты: не более ${caps.fiber}
+Уже использованные источники (предпочитай их, не вводи новые, если не требуется):
+- proteinSourcesUsed: ${usedProteinSources.join(', ') || '—'}
+- carbSourcesUsed: ${usedCarbSources.join(', ') || '—'}
+- fiberSourcesUsed: ${usedFiberSources.join(', ') || '—'}
+Если лимит уже исчерпан, используй только из списка уже использованных.
 Верни ТОЛЬКО валидный JSON:
-{"dayNumber":${dayNumber},"meals":[{"mealTime":"breakfast","name":"...","calories":0,"protein":0,"fat":0,"carbs":0,"portionWeight":0},{"mealTime":"lunch","name":"...","calories":0,"protein":0,"fat":0,"carbs":0,"portionWeight":0},{"mealTime":"dinner","name":"...","calories":0,"protein":0,"fat":0,"carbs":0,"portionWeight":0}]}`;
+{"dayNumber":${dayNumber},"meals":[{"mealTime":"breakfast","name":"...","calories":0,"protein":0,"fat":0,"carbs":0,"portionWeight":0,"proteinSource":"...","carbSource":"...","fiberSource":"..."},{"mealTime":"lunch","name":"...","calories":0,"protein":0,"fat":0,"carbs":0,"portionWeight":0,"proteinSource":"...","carbSource":"...","fiberSource":"..."},{"mealTime":"dinner","name":"...","calories":0,"protein":0,"fat":0,"carbs":0,"portionWeight":0,"proteinSource":"...","carbSource":"...","fiberSource":"..."}]}`;
 }
 
 function validateDayMenuStructure(dayMenu) {
@@ -324,12 +359,39 @@ async function createWeeklyMenu(userId, dailyCalories, p, f, c, goal) {
   // Генерируем по одному дню, чтобы повысить стабильность JSON и сократить латентность
   const system = { role: 'system', content: 'Ты отвечаешь только валидным JSON без текста до и после.' };
   const days = [];
+  const nameCounts = new Map();
+  const proteinSources = new Map();
+  const carbSources = new Map();
+  const fiberSources = new Map();
   for (let day = 1; day <= 7; day++) {
-    const dayPrompt = generateDayMenuPrompt(dailyCalories, p, f, c, goal, day);
+    // Блокируем названия, которые уже использованы 2 раза и более
+    const blocked = Array.from(nameCounts.entries()).filter(([_, cnt]) => cnt >= 2).map(([name]) => name);
+    const usedProt = Array.from(proteinSources.keys());
+    const usedCarb = Array.from(carbSources.keys());
+    const usedFiber = Array.from(fiberSources.keys());
+    const dayPrompt = generateDayMenuPrompt(
+      dailyCalories,
+      p,
+      f,
+      c,
+      goal,
+      day,
+      blocked,
+      usedProt,
+      usedCarb,
+      usedFiber,
+      { protein: 5, carbs: 3, fiber: 5 }
+    );
     const rawDay = await askChatGPT([system, { role: 'user', content: dayPrompt }], { temperature: 0.2, json: true, max_tokens: 450 });
     const parsedDay = await parseMenuJson(rawDay);
     validateDayMenuStructure(parsedDay);
     days.push(parsedDay);
+    for (const m of parsedDay.meals) {
+      if (m && m.name) nameCounts.set(m.name, (nameCounts.get(m.name) || 0) + 1);
+      if (m && m.proteinSource) proteinSources.set(m.proteinSource, (proteinSources.get(m.proteinSource) || 0) + 1);
+      if (m && m.carbSource) carbSources.set(m.carbSource, (carbSources.get(m.carbSource) || 0) + 1);
+      if (m && m.fiberSource) fiberSources.set(m.fiberSource, (fiberSources.get(m.fiberSource) || 0) + 1);
+    }
   }
 
   const parsedMenu = { days };
