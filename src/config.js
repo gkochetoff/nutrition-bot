@@ -17,5 +17,7 @@ module.exports = {
   BOT_TOKEN: process.env.BOT_TOKEN,
   OPENAI_API_KEY: process.env.OPENAI_API_KEY,
   DATABASE_URL: process.env.DATABASE_URL,
-  GPT_MODEL: process.env.GPT_MODEL || 'gpt-4o-mini'
+  GPT_MODEL: process.env.GPT_MODEL || 'gpt-4o-mini',
+  WEBHOOK_URL: process.env.WEBHOOK_URL,
+  PORT: process.env.PORT || 3000
 };
