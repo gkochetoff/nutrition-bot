@@ -16,9 +16,7 @@ npm install
 npm run dev
 ```
 
-Бот использует long polling. Вебхуки не требуются. Если хотите использовать вебхуки, настройте прокси и выполните установку вебхука вручную:
+Установка вебхука вручную:
 ```
 curl -X POST "https://api.telegram.org/botYOUR_BOT_TOKEN/setWebhook?url=YOUR_HTTPS_URL"
 ```
-
-Никогда не публикуйте `BOT_TOKEN` в открытом виде.
