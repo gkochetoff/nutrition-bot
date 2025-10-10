@@ -67,7 +67,7 @@ bot.command('menu', validateUser, async (ctx) => {
   }
 
   console.log('Generating menu for user:', telegramId);
-      await ctx.reply('🍽️ Начинаю генерацию персонального меню на неделю...\n\n⏳ Пожалуйста, подождите. Я пришлю дни по мере готовности.');
+  await ctx.reply('🍽️ Начинаю генерацию персонального меню на неделю...\n\n⏳ Пожалуйста, подождите.');
   
   try {
     console.log('Creating weekly menu...');
@@ -81,78 +81,158 @@ bot.command('menu', validateUser, async (ctx) => {
     );
     console.log('Menu created successfully, menuId:', menuId);
 
-    // Отправляем пользовательское меню по дням по мере готовности
-    for (let day = 1; day <= 7; day++) {
-      const dayMeals = meals.filter(m => m.day === day);
-      if (dayMeals.length === 0) continue;
+    // Сохраняем menuId в сессии для последующей загрузки списка покупок
+    if (!ctx.session) ctx.session = {};
+    ctx.session.currentMenuId = menuId;
 
-      console.log(`Sending menu for day ${day}`);
-      let msg = `📅 <b>День ${day}</b>\n\n`;
-      const buttons = [];
+    // Отправляем меню с кнопками по дням недели
+    const dayButtons = [
+      [
+        { text: 'День 1', callback_data: 'day_1' },
+        { text: 'День 2', callback_data: 'day_2' }
+      ],
+      [
+        { text: 'День 3', callback_data: 'day_3' },
+        { text: 'День 4', callback_data: 'day_4' }
+      ],
+      [
+        { text: 'День 5', callback_data: 'day_5' },
+        { text: 'День 6', callback_data: 'day_6' }
+      ],
+      [
+        { text: 'День 7', callback_data: 'day_7' }
+      ],
+      [
+        { text: '🛒 Список покупок', callback_data: `shopping_list_${menuId}` }
+      ]
+    ];
 
-      dayMeals.forEach(m => {
-        const title = escapeHtml(m.name);
-        const mealLabel = m.meal_time === 'breakfast' ? 'Завтрак' : m.meal_time === 'lunch' ? 'Обед' : 'Ужин';
-        const macros = escapeHtml(`Б${m.protein}/Ж${m.fat}/У${m.carbs}`);
-        const portion = escapeHtml(String(m.portion));
-        msg += `🍽️ <b>${mealLabel}</b>\n` +
-          `• <b>${title}</b>\n` +
-          `• Калории: ${m.calories} ккал\n` +
-          `• БЖУ: ${macros}\n` +
-          `• Порция: ≈ ${portion} г\n\n`;
-        buttons.push([{
-          text: m.name,
-          callback_data: `recipe_${m.id}`
-        }]);
-      });
-
-      await bot.telegram.sendMessage(telegramId, msg, {
+    await bot.telegram.sendMessage(
+      telegramId,
+      '✅ Меню на неделю готово!\n\nВыберите день, чтобы посмотреть блюда:',
+      {
         parse_mode: 'HTML',
         reply_markup: {
-          inline_keyboard: buttons
+          inline_keyboard: dayButtons
         }
-      });
-    }
-
-    // Список покупок сформируем позже, когда рецепты будут готовы
-    console.log('Scheduling shopping list generation...');
-    (async () => {
-      try {
-        const deadline = Date.now() + 120000; // ждём до 2 минут
-        let mealsFromDb = [];
-        while (Date.now() < deadline) {
-          const res = await db.query('SELECT name, recipe FROM meals WHERE menu_id=$1', [menuId]);
-          mealsFromDb = res.rows;
-          const total = mealsFromDb.length;
-          const ready = mealsFromDb.filter(m => !!m.recipe).length;
-          if (total > 0 && ready === total) break;
-          await new Promise(r => setTimeout(r, 5000));
-        }
-
-        if (mealsFromDb.length === 0) return;
-
-        const shoppingList = await getShoppingListFromMenu(mealsFromDb);
-        const text = String(shoppingList || '').trim();
-        if (!text) return;
-        const looksLikeJson = /^\s*[\[{]/.test(text);
-        const payload = looksLikeJson
-          ? `🛒 <b>Список покупок на неделю</b>\n\n<pre>${escapeHtml(text)}</pre>`
-          : `🛒 <b>Список покупок на неделю</b>\n\n${text}`;
-        await bot.telegram.sendMessage(
-          telegramId,
-          payload,
-          { parse_mode: 'HTML' }
-        );
-        console.log('Shopping list sent');
-      } catch (e) {
-        console.error('Failed to send shopping list:', e);
       }
-    })();
+    );
     console.log('Menu generation completed successfully');
 
   } catch (error) {
     console.error('Error generating menu:', error);
     await bot.telegram.sendMessage(telegramId, 'Произошла ошибка при генерации меню. Попробуйте снова позже.');
+  }
+});
+
+// Обработка нажатия на кнопку дня
+bot.action(/day_(\d+)/, validateUser, async (ctx) => {
+  try {
+    const day = parseInt(ctx.match[1]);
+    console.log('Day request received for day:', day);
+    
+    const telegramId = ctx.from.id;
+    const user = await userController.getUserByTelegramId(telegramId);
+    if (!user) {
+      return ctx.answerCbQuery('Пользователь не найден', { show_alert: true });
+    }
+
+    // Получаем последнее меню пользователя
+    const menuRes = await db.query(
+      'SELECT id FROM menus WHERE user_id=$1 ORDER BY created_at DESC LIMIT 1',
+      [user.id]
+    );
+    if (menuRes.rows.length === 0) {
+      return ctx.answerCbQuery('Меню не найдено', { show_alert: true });
+    }
+    const menuId = menuRes.rows[0].id;
+
+    // Получаем блюда для выбранного дня
+    const mealsRes = await db.query(
+      'SELECT id, day, meal_time, name, calories, protein, fat, carbs, portion_weight FROM meals WHERE menu_id=$1 AND day=$2',
+      [menuId, day]
+    );
+    const dayMeals = mealsRes.rows;
+
+    if (dayMeals.length === 0) {
+      return ctx.answerCbQuery('Блюда не найдены для этого дня', { show_alert: true });
+    }
+
+    let msg = `📅 <b>День ${day}</b>\n\n`;
+    const buttons = [];
+
+    dayMeals.forEach(m => {
+      const title = escapeHtml(m.name);
+      const mealLabel = m.meal_time === 'breakfast' ? 'Завтрак' : m.meal_time === 'lunch' ? 'Обед' : 'Ужин';
+      const macros = escapeHtml(`Б${m.protein}/Ж${m.fat}/У${m.carbs}`);
+      const portion = escapeHtml(String(m.portion_weight));
+      msg += `🍽️ <b>${mealLabel}</b>\n` +
+        `• <b>${title}</b>\n` +
+        `• Калории: ${m.calories} ккал\n` +
+        `• БЖУ: ${macros}\n` +
+        `• Порция: ≈ ${portion} г\n\n`;
+      buttons.push([{
+        text: m.name,
+        callback_data: `recipe_${m.id}`
+      }]);
+    });
+
+    await ctx.answerCbQuery();
+    await ctx.reply(msg, {
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: buttons
+      }
+    });
+    console.log('Day menu sent successfully');
+  } catch (error) {
+    console.error('Error fetching day menu:', error);
+    await ctx.answerCbQuery('Произошла ошибка при получении меню', { show_alert: true });
+  }
+});
+
+// Обработка нажатия на кнопку списка покупок
+bot.action(/shopping_list_(\d+)/, validateUser, async (ctx) => {
+  try {
+    const menuId = ctx.match[1];
+    console.log('Shopping list request received for menu:', menuId);
+
+    await ctx.answerCbQuery();
+    await ctx.reply('🛒 Формирую список покупок...\n\n⏳ Пожалуйста, подождите.');
+
+    // Ждём пока все рецепты будут готовы
+    const deadline = Date.now() + 120000; // ждём до 2 минут
+    let mealsFromDb = [];
+    while (Date.now() < deadline) {
+      const res = await db.query('SELECT name, recipe FROM meals WHERE menu_id=$1', [menuId]);
+      mealsFromDb = res.rows;
+      const total = mealsFromDb.length;
+      const ready = mealsFromDb.filter(m => !!m.recipe).length;
+      console.log(`Recipes ready: ${ready}/${total}`);
+      if (total > 0 && ready === total) break;
+      await new Promise(r => setTimeout(r, 5000));
+    }
+
+    if (mealsFromDb.length === 0) {
+      return ctx.reply('Список покупок пуст. Нет доступных блюд.');
+    }
+
+    const shoppingList = await getShoppingListFromMenu(mealsFromDb);
+    const text = String(shoppingList || '').trim();
+    if (!text) {
+      return ctx.reply('Не удалось сформировать список покупок.');
+    }
+
+    const looksLikeJson = /^\s*[\[{]/.test(text);
+    const payload = looksLikeJson
+      ? `🛒 <b>Список покупок на неделю</b>\n\n<pre>${escapeHtml(text)}</pre>`
+      : `🛒 <b>Список покупок на неделю</b>\n\n${text}`;
+    
+    await ctx.reply(payload, { parse_mode: 'HTML' });
+    console.log('Shopping list sent successfully');
+  } catch (error) {
+    console.error('Error generating shopping list:', error);
+    await ctx.reply('Произошла ошибка при формировании списка покупок.');
   }
 });
 

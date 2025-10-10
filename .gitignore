@@ -173,3 +173,4 @@ cython_debug/
 start_postgres.sh
 /node_modules
 package-lock.json
+.envOld
