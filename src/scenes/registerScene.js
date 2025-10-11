@@ -1,5 +1,6 @@
 const { Scenes, Markup } = require('telegraf');
 const userController = require('../controllers/userController');
+const { getMainMenuKeyboard } = require('../keyboards');
 const { 
   calculateBMR,
   activityFactor,
@@ -96,8 +97,31 @@ const registerScene = new Scenes.WizardScene(
     const dailyCalories = adjustCaloriesForGoal(tdee, goal);
     const macros = calculateMacros(dailyCalories);
 
-    // Сохраняем в БД
+    // Проверяем старые данные пользователя
     const telegramId = ctx.from.id;
+    const oldUser = await userController.getUserByTelegramId(telegramId);
+    
+    // Для нового пользователя всегда считаем, что данные "изменились"
+    let dataChanged = !oldUser;
+    if (oldUser) {
+      // Приводим типы для корректного сравнения (в БД могут храниться строки вроде '76.00')
+      const oldAge = parseInt(oldUser.age);
+      const oldWeight = parseFloat(oldUser.weight);
+      const oldHeight = parseInt(oldUser.height);
+      const oldGender = oldUser.gender;
+      const oldActivity = oldUser.activity_level;
+      const oldGoal = oldUser.goal;
+
+      dataChanged =
+        oldAge !== parseInt(age) ||
+        oldGender !== gender ||
+        oldWeight !== parseFloat(weight) ||
+        oldHeight !== parseInt(height) ||
+        oldActivity !== activity ||
+        oldGoal !== goal;
+    }
+
+    // Сохраняем в БД
     await userController.upsertUser({
       telegram_id: telegramId,
       age,
@@ -112,16 +136,39 @@ const registerScene = new Scenes.WizardScene(
       carbs: macros.carbs
     });
 
-    // Отправляем результат
-    ctx.reply(
-      `✅ Данные успешно сохранены!\n\n` +
-      `📊 Ваша суточная норма:\n` +
-      `• Калории: <b>${dailyCalories} ккал</b>\n` +
-      `• Белки: <b>${macros.protein} г</b>\n` +
-      `• Жиры: <b>${macros.fat} г</b>\n` +
-      `• Углеводы: <b>${macros.carbs} г</b>\n\n` +
-      `🍽️ Теперь используйте команду /menu для генерации персонального меню на неделю!`
-    , { parse_mode: 'HTML' }, Markup.removeKeyboard());
+    // Сообщение после сохранения
+    if (dataChanged) {
+      await ctx.reply(
+        `✅ Данные успешно сохранены!\n\n` +
+        `📊 Ваша суточная норма:\n` +
+        `• Калории: <b>${dailyCalories} ккал</b>\n` +
+        `• Белки: <b>${macros.protein} г</b>\n` +
+        `• Жиры: <b>${macros.fat} г</b>\n` +
+        `• Углеводы: <b>${macros.carbs} г</b>`,
+        { parse_mode: 'HTML' }
+      );
+    } else {
+      await ctx.reply(
+        `ℹ️ Данные остались без изменений.`,
+        { parse_mode: 'HTML' }
+      );
+    }
+
+    // Если данные изменились, предлагаем сгенерировать новое меню
+    if (dataChanged && oldUser) {
+      const { Markup } = require('telegraf');
+      await ctx.reply(
+        '🔄 Ваши данные изменились. Хотите сгенерировать новое меню с учетом обновленных параметров?',
+        Markup.keyboard([
+          ['✅ Да, сгенерировать новое меню', '❌ Нет, позже']
+        ]).resize().oneTime()
+      );
+    } else {
+      await ctx.reply(
+        '🍽️ Используйте кнопки ниже для навигации:',
+        getMainMenuKeyboard()
+      );
+    }
 
     return ctx.scene.leave();
   }
