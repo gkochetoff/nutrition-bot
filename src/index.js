@@ -1,5 +1,6 @@
 const express = require('express');
-const bot = require('./bot');
+const createBot = require('./bot');
+const bot = createBot();
 const { PORT, WEBHOOK_URL, BOT_TOKEN } = require('./config');
 
 const app = express();
