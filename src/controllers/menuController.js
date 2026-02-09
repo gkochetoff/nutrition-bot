@@ -77,29 +77,6 @@ function validateMenuStructure(menu) {
   }
 }
 
-/**
- * Generates a menu prompt for ChatGPT
- */
-function generateMenuPrompt(dailyCalories, p, f, c, goal) {
-  const dc = Math.round(dailyCalories);
-  const ranges = {
-    kcalMin: Math.round(dc * 0.97),
-    kcalMax: Math.round(dc * 1.03),
-    pMin: Math.round(p * 0.95),
-    pMax: Math.round(p * 1.05),
-    fMin: Math.round(f * 0.95),
-    fMax: Math.round(f * 1.05),
-    cMin: Math.round(c * 0.95),
-    cMax: Math.round(c * 1.05)
-  };
-  return `Составь недельное меню (7 дней) для цели "${goal}" с нормой ${dc} ккал/день и макросами (Б:${p}г, Ж:${f}г, У:${c}г).
-Каждый день: 3 приёма пищи (breakfast, lunch, dinner). Дневные суммы в пределах: ${ranges.kcalMin}-${ranges.kcalMax} ккал, Б:${ranges.pMin}-${ranges.pMax}, Ж:${ranges.fMin}-${ranges.fMax}, У:${ranges.cMin}-${ranges.cMax}.
-Продукты повторяй между днями для экономии.
-Для каждого блюда укажи: mealTime, name, calories, protein, fat, carbs, portionWeight (гр).
-Верни ТОЛЬКО валидный JSON:
-{"days":[{"dayNumber":1,"meals":[{"mealTime":"breakfast","name":"...","calories":0,"protein":0,"fat":0,"carbs":0,"portionWeight":0},{"mealTime":"lunch","name":"...","calories":0,"protein":0,"fat":0,"carbs":0,"portionWeight":0},{"mealTime":"dinner","name":"...","calories":0,"protein":0,"fat":0,"carbs":0,"portionWeight":0}]},{"dayNumber":2,"meals":[...]},...,{"dayNumber":7,"meals":[...]}]}`;
-}
-
 function generateDayMenuPrompt(
   dailyCalories,
   p,
@@ -173,7 +150,7 @@ function validateDayMenuStructure(dayMenu) {
 /**
  * Parses the menu JSON from ChatGPT response
  */
-async function parseMenuJson(rawJson) {
+function parseMenuJson(rawJson) {
   if (!rawJson || typeof rawJson !== 'string') {
     throw new Error('Failed to parse menu JSON: empty response');
   }
@@ -383,7 +360,7 @@ async function createWeeklyMenu(userId, dailyCalories, p, f, c, goal) {
       { protein: 5, carbs: 3, fiber: 5 }
     );
     const rawDay = await askChatGPT([system, { role: 'user', content: dayPrompt }], { temperature: 0.2, json: true, max_tokens: 450 });
-    const parsedDay = await parseMenuJson(rawDay);
+    const parsedDay = parseMenuJson(rawDay);
     validateDayMenuStructure(parsedDay);
     days.push(parsedDay);
     for (const m of parsedDay.meals) {
@@ -431,144 +408,6 @@ async function createWeeklyMenu(userId, dailyCalories, p, f, c, goal) {
 async function getShoppingListFromMenu(meals) {
   const shoppingList = await generateShoppingListFromMeals(meals);
   return shoppingList;
-}
-
-async function generateShoppingList(recipes) {
-  console.log('Generating shopping list for recipes:', recipes.map(r => r.name).join(', '));
-  
-  const ingredients = recipes.flatMap(recipe => recipe.ingredients || []);
-  if (!ingredients.length) {
-    console.log('No ingredients found in recipes');
-    return [];
-  }
-
-  const shoppingListPrompt = `
-Создай оптимизированный список покупок на основе следующих ингредиентов.
-Строго следуй этим правилам:
-
-1. Группируй похожие ингредиенты и суммируй их количество:
-   - "100 г моркови" + "50 г моркови" = "150 г моркови"
-   - "1 зубчик чеснока" + "1 зубчик чеснока" = "2 зубчика чеснока"
-
-2. Приводи все к стандартным единицам измерения:
-   - Объем: мл, л
-   - Вес: г, кг
-   - Штуки: шт
-   - Приправы: ч.л., ст.л.
-
-3. Объединяй похожие приправы и масла:
-   - "1 ч.л. оливкового масла" + "1 ст.л. оливкового масла" = "25 мл оливкового масла"
-   - "соль по вкусу" + "1 г соли" = "соль по вкусу"
-
-4. Группируй ингредиенты по категориям:
-   - Мясо и рыба
-   - Овощи
-   - Фрукты
-   - Зерновые
-   - Молочные продукты
-   - Орехи и семена
-   - Приправы и масла
-   - Яйца
-   - Напитки
-   - Дополнительно
-
-5. Удаляй дубликаты и объединяй похожие формулировки:
-   - "ягоды (малина)" + "ягоды (черника)" = "ягоды (малина, черника)"
-   - "перец по вкусу" + "черный перец" = "перец по вкусу"
-
-Ингредиенты:
-${ingredients.join('\n')}
-
-Верни ТОЛЬКО валидный JSON массив строк, где каждая строка - это ингредиент с общим количеством:
-[ "150 г моркови", "2 зубчика чеснока", ... ]`;
-
-  try {
-    let raw = await askChatGPT([{ role: 'user', content: shoppingListPrompt }]);
-    raw = raw.replace(/```json|```/g, '').trim();
-
-    let shoppingList;
-    try {
-      shoppingList = JSON.parse(raw);
-    } catch {
-      try {
-        shoppingList = JSON5.parse(raw);
-      } catch (e) {
-        console.error('Failed to parse shopping list JSON:', e);
-        return [];
-      }
-    }
-
-    // Проверяем структуру списка
-    if (!Array.isArray(shoppingList)) {
-      console.error('Shopping list is not an array');
-      return [];
-    }
-
-    // Фильтруем пустые строки
-    shoppingList = shoppingList
-      .filter(item => typeof item === 'string' && item.trim().length > 0)
-      .map(item => item.trim());
-
-    console.log('Successfully generated shopping list with', shoppingList.length, 'items');
-    return shoppingList;
-  } catch (error) {
-    console.error('Error generating shopping list:', error);
-    return [];
-  }
-}
-
-async function handleMealSelection(ctx, meal) {
-  console.log('Handling meal selection:', meal.name);
-  
-  try {
-    const recipe = await generateRecipe(meal, ctx.session.goal);
-    if (!recipe || !recipe.ingredients || !recipe.steps) {
-      console.error('Invalid recipe generated for:', meal.name);
-      await ctx.reply('Извините, не удалось сгенерировать рецепт. Попробуйте выбрать другое блюдо.');
-      return;
-    }
-
-    const recipeText = formatRecipe(recipe);
-    await ctx.reply(recipeText);
-
-    // Обновляем список покупок
-    const currentList = ctx.session.shoppingList || [];
-    const newIngredients = recipe.ingredients.filter(ing => !currentList.includes(ing));
-    
-    if (newIngredients.length > 0) {
-      ctx.session.shoppingList = [...currentList, ...newIngredients];
-      await ctx.reply('Список покупок обновлен!');
-    }
-
-    // Сохраняем выбранное блюдо
-    if (!ctx.session.selectedMeals) {
-      ctx.session.selectedMeals = [];
-    }
-    ctx.session.selectedMeals.push(meal);
-
-    console.log('Successfully handled meal selection for:', meal.name);
-  } catch (error) {
-    console.error('Error handling meal selection:', error);
-    await ctx.reply('Произошла ошибка при обработке выбранного блюда. Попробуйте еще раз.');
-  }
-}
-
-function formatRecipe(recipe) {
-  if (!recipe || !recipe.ingredients || !recipe.steps) {
-    return 'Рецепт недоступен';
-  }
-
-  const ingredients = recipe.ingredients
-    .map((ing, i) => `${i + 1}. ${ing.replace(/\\/g, '')}`)
-    .join('\n');
-  
-  const steps = recipe.steps
-    .map((step, i) => `${i + 1}. ${step.replace(/\\/g, '')}`)
-    .join('\n');
-  
-  const time = recipe.cookingTimeMinutes || 0;
-
-  return `📝 Рецепт:\n\nИнгредиенты:\n${ingredients}\n\nШаги приготовления:\n${steps}\n\n⏱ Время приготовления: ${time} минут`;
 }
 
 module.exports = {

@@ -1,6 +1,4 @@
-const { askChatGPT } = require('../services/openaiService');
 const escapeHtml = require('../utils/escapeHtml');
-const escapeMd = require('../utils/escapeMarkdown');
 
 // Утилиты нормализации текста
 function preprocessRaw(text) {
