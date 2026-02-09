@@ -1,46 +1,81 @@
 const express = require('express');
+const crypto = require('crypto');
 const createBot = require('./bot');
 const bot = createBot();
-const { PORT, WEBHOOK_URL, BOT_TOKEN } = require('./config');
+const { PORT, WEBHOOK_URL, WEBHOOK_PATH, TELEGRAM_WEBHOOK_SECRET } = require('./config');
 
 const app = express();
+let server;
 
 // Middleware для парсинга JSON
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 
 // Health check endpoint
 app.get('/', (req, res) => {
   res.json({ status: 'Bot is running', timestamp: new Date().toISOString() });
 });
 
-// Webhook endpoint для Telegram
-app.post(`/webhook/${BOT_TOKEN}`, (req, res) => {
-  bot.handleUpdate(req.body);
-  res.sendStatus(200);
-});
+function normalizeWebhookPath(path) {
+  if (!path) return null;
+  const trimmed = String(path).trim();
+  if (!trimmed) return null;
+  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+}
+
+function joinUrl(baseUrl, path) {
+  const base = String(baseUrl).replace(/\/+$/, '');
+  return `${base}${path}`;
+}
+
+function defaultWebhookPath() {
+  // Stable, URL-safe path component that doesn't leak the BOT_TOKEN (and avoids ":" in express routes)
+  const component = crypto
+    .createHash('sha256')
+    .update(String(process.env.BOT_TOKEN || ''))
+    .digest('hex')
+    .slice(0, 32);
+  return `/webhook/${component}`;
+}
+
+const webhookPath = normalizeWebhookPath(WEBHOOK_PATH) || defaultWebhookPath();
+
+// Telegraf webhook middleware (handles path + optional secret token verification)
+app.use(
+  bot.webhookCallback(webhookPath, {
+    secretToken: TELEGRAM_WEBHOOK_SECRET || undefined
+  })
+);
 
 (async function main() {
   try {
-    console.log('Запуск телеграм-бота в webhook режиме...');
-    
-    // Устанавливаем webhook, если URL задан
-    if (WEBHOOK_URL) {
-      const webhookUrl = `${WEBHOOK_URL}/webhook/${BOT_TOKEN}`;
-      console.log('Устанавливаю webhook:', webhookUrl);
-      await bot.telegram.setWebhook(webhookUrl);
-      console.log('Webhook установлен успешно');
-    } else {
-      console.log('WEBHOOK_URL не задан, webhook не установлен');
-    }
-    
     // Запускаем Express сервер
-    app.listen(PORT, () => {
+    server = app.listen(PORT, () => {
       console.log(`Сервер запущен на порту ${PORT}`);
-      console.log('Бот готов к приёму webhook запросов!');
+      console.log('Health endpoint: GET /');
     });
-    
+
+    if (WEBHOOK_URL) {
+      console.log('Запуск телеграм-бота в webhook режиме...');
+      const webhookUrl = joinUrl(WEBHOOK_URL, webhookPath);
+      console.log('Webhook path:', webhookPath);
+      console.log('Устанавливаю webhook:', webhookUrl);
+      await bot.telegram.setWebhook(webhookUrl, {
+        secret_token: TELEGRAM_WEBHOOK_SECRET || undefined
+      });
+      console.log('Webhook установлен успешно');
+      console.log('Бот готов к приёму webhook запросов!');
+    } else {
+      console.log('WEBHOOK_URL не задан — запускаю long polling режим...');
+      bot
+        .launch()
+        .then(() => console.log('Бот запущен (long polling)'))
+        .catch((e) => console.error('Ошибка при запуске long polling:', e));
+    }
   } catch (err) {
     console.error('Ошибка при запуске бота:', err);
+    try {
+      server?.close();
+    } catch {}
   }
 })();
 
@@ -48,9 +83,13 @@ app.post(`/webhook/${BOT_TOKEN}`, (req, res) => {
 const shutdown = async (signal) => {
   try {
     console.log(`Получен сигнал ${signal}. Останавливаю бота...`);
-    if (WEBHOOK_URL) {
-      await bot.telegram.deleteWebhook();
-      console.log('Webhook удалён');
+    try {
+      // If running in long polling mode, stop it. In webhook-only mode it may throw "Bot is not running!".
+      bot.stop(signal);
+    } catch {}
+    if (WEBHOOK_URL) await bot.telegram.deleteWebhook();
+    if (server) {
+      await new Promise((resolve) => server.close(resolve));
     }
     console.log('Бот остановлен.');
     process.exit(0);

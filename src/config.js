@@ -19,5 +19,7 @@ module.exports = {
   DATABASE_URL: process.env.DATABASE_URL,
   GPT_MODEL: process.env.GPT_MODEL || 'gpt-4o-mini',
   WEBHOOK_URL: process.env.WEBHOOK_URL,
+  WEBHOOK_PATH: process.env.WEBHOOK_PATH,
+  TELEGRAM_WEBHOOK_SECRET: process.env.TELEGRAM_WEBHOOK_SECRET,
   PORT: process.env.PORT || 3000
 };
